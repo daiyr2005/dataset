@@ -94,19 +94,22 @@ if uploaded and st.button("Сохранить файл"):
 
 # ───── ZIP DOWNLOAD ─────
 st.divider()
-st.subheader("📦 Сохранить dataset.zip")
+st.subheader("📦 Скачать dataset.zip")
 
-save_path = st.text_input("Путь сохранения", value=os.path.expanduser("~/Downloads/dataset.zip"))
+zip_buffer = io.BytesIO()
+with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+    for cls in os.listdir(DATASET_DIR):
+        cls_path = os.path.join(DATASET_DIR, cls)
+        if os.path.isdir(cls_path):
+            for file in os.listdir(cls_path):
+                file_path = os.path.join(cls_path, file)
+                zf.write(file_path, f"{cls}/{file}")
 
-if st.button("💾 Создать и сохранить ZIP"):
-    zip_path = save_path.strip()
+zip_buffer.seek(0)
 
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for cls in os.listdir(DATASET_DIR):
-            cls_path = os.path.join(DATASET_DIR, cls)
-            if os.path.isdir(cls_path):
-                for file in os.listdir(cls_path):
-                    file_path = os.path.join(cls_path, file)
-                    zf.write(file_path, f"{cls}/{file}")
-
-    st.success(f"✅ ZIP сохранён: `{zip_path}`")
+st.download_button(
+    "⬇️ Скачать dataset.zip",
+    data=zip_buffer.getvalue(),
+    file_name="dataset.zip",
+    mime="application/zip"
+)
