@@ -1,4 +1,5 @@
 import streamlit as st
+from audio_recorder_streamlit import audio_recorder
 import zipfile
 import io
 import os
@@ -88,6 +89,7 @@ with st.expander("📊 Статистика датасета", expanded=True):
 st.divider()
 
 # ───── RECORD ─────
+# ───── RECORD ─────
 st.subheader("🎙️ Запись нового примера")
 
 class_name = st.text_input(
@@ -96,6 +98,7 @@ class_name = st.text_input(
     key="class_input"
 )
 
+# Показываем сколько осталось для выбранного класса
 if class_name.strip():
     current = get_stats().get(class_name.strip().lower().replace(" ", "_"), 0)
     remaining = max(TARGET - current, 0)
@@ -104,10 +107,15 @@ if class_name.strip():
     else:
         st.success(f"✅ Класс «{class_name.strip()}» заполнен ({TARGET}/{TARGET})")
 
-audio_input = st.audio_input("🎙️ Нажми для записи")
+audio_bytes = audio_recorder(
+    text="Нажми для записи",
+    recording_color="#e74c3c",
+    neutral_color="#3498db",
+    key="collector_recorder"
+)
 
-if audio_input:
-    st.audio(audio_input, format="audio/wav")
+if audio_bytes and len(audio_bytes) > 0:
+    st.audio(audio_bytes, format="audio/wav")
 
     if st.button("💾 Сохранить в датасет", key="save_btn", type="primary"):
         if not class_name.strip():
@@ -117,13 +125,13 @@ if audio_input:
             if current >= TARGET:
                 st.warning(f"⚠️ Класс «{class_name.strip()}» уже достиг {TARGET} записей!")
             else:
-                cls, fname = save_audio(audio_input.read(), class_name)
+                cls, fname = save_audio(audio_bytes, class_name)
                 new_count = get_stats().get(cls, 0)
                 st.success(f"✅ Сохранено! Класс «{cls}» — {new_count} / {TARGET}")
                 if new_count >= TARGET:
                     st.balloons()
+                    st.info(f"🎉 Класс «{cls}» достиг цели {TARGET} записей!")
                 st.rerun()
-
 # ───── UPLOAD ─────
 st.divider()
 st.subheader("📂 Загрузка файла")
