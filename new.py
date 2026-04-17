@@ -12,6 +12,21 @@ import soundfile as sf
 # ───── SETTINGS ─────
 TARGET = 100
 
+
+import streamlit as st
+from audio_recorder_streamlit import audio_recorder
+
+st.title("Test mic")
+
+audio_bytes = audio_recorder()
+
+if audio_bytes:
+    st.audio(audio_bytes)
+    st.write("OK")
+else:
+    st.write("No audio")
+
+
 if "dataset_dir" not in st.session_state:
     st.session_state["dataset_dir"] = "dataset"
 
@@ -46,10 +61,11 @@ def get_local_count(class_name):
 
 # ───── 500 VOICE AUGMENTATION ─────
 def generate_500_variants(audio_bytes):
-    y, sr = librosa.load(io.BytesIO(audio_bytes), sr=None)
+    # вместо librosa.load напрямую из BytesIO
+    buffer = io.BytesIO(audio_bytes)
+    y, sr = sf.read(buffer)  # soundfile умеет читать из BytesIO
 
     outputs = []
-
     for _ in range(500):
         y_mod = y.copy()
 
@@ -65,9 +81,9 @@ def generate_500_variants(audio_bytes):
         noise = np.random.normal(0, 0.002, len(y_mod))
         y_mod = y_mod + noise
 
-        buffer = io.BytesIO()
-        sf.write(buffer, y_mod, sr, format="WAV")
-        outputs.append(buffer.getvalue())
+        buffer_out = io.BytesIO()
+        sf.write(buffer_out, y_mod, sr, format="WAV")
+        outputs.append(buffer_out.getvalue())
 
     return outputs
 
