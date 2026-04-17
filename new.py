@@ -8,7 +8,7 @@ import shutil
 
 TARGET = 100
 
-# ───── DATASET DIR из session_state ─────
+# ───── DATASET DIR ─────
 if "dataset_dir" not in st.session_state:
     st.session_state["dataset_dir"] = "dataset"
 
@@ -22,7 +22,11 @@ all_datasets = [d for d in os.listdir(".") if os.path.isdir(d) and not d.startsw
 
 col1, col2 = st.columns([2, 1])
 with col1:
-    selected = st.selectbox("📁 Текущий датасет", all_datasets, index=all_datasets.index(DATASET_DIR) if DATASET_DIR in all_datasets else 0)
+    selected = st.selectbox(
+        "📁 Текущий датасет",
+        all_datasets,
+        index=all_datasets.index(DATASET_DIR) if DATASET_DIR in all_datasets else 0
+    )
     if selected != DATASET_DIR:
         st.session_state["dataset_dir"] = selected
         st.rerun()
@@ -32,24 +36,24 @@ with col2:
 
 st.divider()
 
-# ───── СОЗДАТЬ НОВЫЙ ДАТАСЕТ ─────
+# ───── СОЗДАТЬ ДАТАСЕТ ─────
 st.subheader("🆕 Создать новый датасет")
 
-new_name = st.text_input("Название нового датасета", placeholder="например: dataset_2")
+new_name = st.text_input("Название нового датасета")
 
 if st.button("🆕 Создать"):
     if new_name.strip():
         new_dir = new_name.strip().lower().replace(" ", "_")
         os.makedirs(new_dir, exist_ok=True)
         st.session_state["dataset_dir"] = new_dir
-        st.success(f"✅ Создан и выбран: `{new_dir}`")
+        st.success(f"Создан: {new_dir}")
         st.rerun()
     else:
         st.error("Введи название")
 
 st.divider()
 
-# ───── STATS ─────
+# ───── FUNCTIONS ─────
 def get_stats():
     stats = {}
     for cls in os.listdir(DATASET_DIR):
@@ -59,7 +63,6 @@ def get_stats():
     return stats
 
 
-# ───── SAVE AUDIO ─────
 def save_audio(file_bytes, class_name):
     class_name = class_name.strip().lower().replace(" ", "_")
     class_dir = os.path.join(DATASET_DIR, class_name)
@@ -74,132 +77,110 @@ def save_audio(file_bytes, class_name):
     return class_name, filename
 
 
-# ───── UI STATS ─────
-with st.expander("📊 Статистика датасета", expanded=True):
+# ───── STATS ─────
+with st.expander("📊 Статистика", expanded=True):
     stats = get_stats()
     if stats:
         cols = st.columns(len(stats))
         for col, (cls, cnt) in zip(cols, stats.items()):
             pct = min(cnt / TARGET, 1.0)
-            col.metric(cls, f"{cnt} / {TARGET}")
+            col.metric(cls, f"{cnt}/{TARGET}")
             col.progress(pct)
     else:
-        st.info("Датасет пуст — начни запись!")
+        st.info("Пусто")
 
 st.divider()
 
 # ───── RECORD ─────
-st.subheader("🎙️ Запись нового примера")
+st.subheader("🎙️ Запись")
 
-class_name = st.text_input(
-    "Название класса (папки)",
-    placeholder="например: dog, cat, car_horn",
-    key="class_input"
-)
+class_name = st.text_input("Класс", key="class_input")
 
-# Показываем сколько осталось для выбранного класса
 if class_name.strip():
     current = get_stats().get(class_name.strip().lower().replace(" ", "_"), 0)
-    remaining = max(TARGET - current, 0)
-    if remaining > 0:
-        st.caption(f"📌 Записано: {current} / {TARGET} — осталось {remaining}")
-    else:
-        st.success(f"✅ Класс «{class_name.strip()}» заполнен ({TARGET}/{TARGET})")
+    st.caption(f"{current}/{TARGET}")
 
 audio_bytes = audio_recorder(
     text="Нажми для записи",
     recording_color="#e74c3c",
     neutral_color="#3498db",
-    key="collector_recorder"
 )
 
+# ✅ ВОТ ТУТ ДОБАВЛЕНО СКАЧИВАНИЕ
 if audio_bytes and len(audio_bytes) > 0:
     st.audio(audio_bytes, format="audio/wav")
 
-    if st.button("💾 Сохранить в датасет", key="save_btn", type="primary"):
+    st.download_button(
+        label="⬇️ Скачать аудио",
+        data=audio_bytes,
+        file_name=f"{uuid.uuid4()}.wav",
+        mime="audio/wav"
+    )
+
+    if st.button("💾 Сохранить"):
         if not class_name.strip():
-            st.error("Введи название класса!")
+            st.error("Введи класс")
         else:
-            current = get_stats().get(class_name.strip().lower().replace(" ", "_"), 0)
-            if current >= TARGET:
-                st.warning(f"⚠️ Класс «{class_name.strip()}» уже достиг {TARGET} записей!")
-            else:
-                cls, fname = save_audio(audio_bytes, class_name)
-                new_count = get_stats().get(cls, 0)
-                st.success(f"✅ Сохранено! Класс «{cls}» — {new_count} / {TARGET}")
-                if new_count >= TARGET:
-                    st.balloons()
-                    st.info(f"🎉 Класс «{cls}» достиг цели {TARGET} записей!")
-                st.rerun()
+            cls, fname = save_audio(audio_bytes, class_name)
+            st.success(f"Сохранено: {cls}/{fname}")
+            st.rerun()
 
 # ───── UPLOAD ─────
 st.divider()
 st.subheader("📂 Загрузка файла")
 
-uploaded = st.file_uploader("Загрузи WAV", type=["wav"])
+uploaded = st.file_uploader("WAV", type=["wav"])
 upload_class = st.text_input("Класс файла")
 
 if uploaded and st.button("Сохранить файл"):
     if upload_class.strip():
         data = uploaded.read()
         cls, fname = save_audio(data, upload_class)
-        st.success(f"Сохранено: {cls}/{fname}")
+        st.success(f"{cls}/{fname}")
         st.rerun()
     else:
         st.error("Введи класс")
 
-# ───── IMPORT ZIP ─────
+# ───── ZIP IMPORT ─────
 st.divider()
-st.subheader("📥 Загрузить / обновить датасет из ZIP")
+st.subheader("📥 Импорт ZIP")
 
-uploaded_zip = st.file_uploader("Загрузи ZIP датасет", type=["zip"], key="zip_upload")
+uploaded_zip = st.file_uploader("ZIP", type=["zip"])
 
-mode = st.radio(
-    "Режим загрузки",
-    ["➕ Добавить к существующему", "🔄 Заменить существующий"],
-    horizontal=True
-)
-
-if uploaded_zip and st.button("📥 Импортировать ZIP"):
-    if mode == "🔄 Заменить существующий":
-        shutil.rmtree(DATASET_DIR)
-        os.makedirs(DATASET_DIR, exist_ok=True)
-
+if uploaded_zip and st.button("Импорт"):
     imported = 0
     with zipfile.ZipFile(io.BytesIO(uploaded_zip.read())) as zf:
         for name in zf.namelist():
             parts = name.strip("/").split("/")
             if len(parts) == 2:
-                cls_name, file_name = parts
-                if file_name.endswith(".wav"):
-                    cls_dir = os.path.join(DATASET_DIR, cls_name)
+                cls, file = parts
+                if file.endswith(".wav"):
+                    cls_dir = os.path.join(DATASET_DIR, cls)
                     os.makedirs(cls_dir, exist_ok=True)
-                    save_path = os.path.join(cls_dir, f"{uuid.uuid4()}.wav")
-                    with zf.open(name) as src, open(save_path, "wb") as dst:
+                    path = os.path.join(cls_dir, f"{uuid.uuid4()}.wav")
+                    with zf.open(name) as src, open(path, "wb") as dst:
                         dst.write(src.read())
                     imported += 1
 
-    st.success(f"✅ Импортировано {imported} файлов!")
+    st.success(f"Импортировано: {imported}")
     st.rerun()
 
 # ───── ZIP DOWNLOAD ─────
 st.divider()
-st.subheader("📦 Скачать dataset.zip")
+st.subheader("📦 Скачать всё")
 
 zip_buffer = io.BytesIO()
-with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+with zipfile.ZipFile(zip_buffer, "w") as zf:
     for cls in os.listdir(DATASET_DIR):
         cls_path = os.path.join(DATASET_DIR, cls)
         if os.path.isdir(cls_path):
             for file in os.listdir(cls_path):
-                file_path = os.path.join(cls_path, file)
-                zf.write(file_path, f"{cls}/{file}")
+                zf.write(os.path.join(cls_path, file), f"{cls}/{file}")
 
 zip_buffer.seek(0)
 
 st.download_button(
     "⬇️ Скачать dataset.zip",
     data=zip_buffer.getvalue(),
-    file_name=f"{DATASET_DIR}.zip",
-    mime="application/zip"
+    file_name="dataset.zip"
 )
