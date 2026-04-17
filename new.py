@@ -4,7 +4,6 @@ import io
 import os
 import uuid
 import shutil
-from audio_recorder_streamlit import audio_recorder
 
 TARGET = 100
 
@@ -91,34 +90,40 @@ st.divider()
 # ───── RECORD ─────
 st.subheader("🎙️ Запись нового примера")
 
-class_name = st.text_input("Название класса", key="class_input")
-
-audio_bytes = audio_recorder(
-    text="Нажми для записи",
-    recording_color="#e74c3c",
-    neutral_color="#3498db",
-    key="rec"
+class_name = st.text_input(
+    "Название класса (папки)",
+    placeholder="например: dog, cat, car_horn",
+    key="class_input"
 )
 
-# ПРОВЕРКА
-st.write("audio_bytes:", audio_bytes)
-st.write("тип:", type(audio_bytes))
-st.write("длина:", len(audio_bytes) if audio_bytes else 0)
-
-if audio_bytes and len(audio_bytes) > 1000:  # меньше 1000 байт = пустая запись
-    st.audio(audio_bytes, format="audio/wav")
-    if st.button("💾 Сохранить"):
-        if class_name.strip():
-            cls, fname = save_audio(audio_bytes, class_name)
-            st.success(f"Сохранено: {cls}/{fname}")
-            st.rerun()
-        else:
-            st.error("Введи название класса")
-else:
-    if audio_bytes:
-        st.warning("⚠️ Запись слишком короткая или пустая!")
+if class_name.strip():
+    current = get_stats().get(class_name.strip().lower().replace(" ", "_"), 0)
+    remaining = max(TARGET - current, 0)
+    if remaining > 0:
+        st.caption(f"📌 Записано: {current} / {TARGET} — осталось {remaining}")
     else:
-        st.info("Нажми кнопку и запиши звук")
+        st.success(f"✅ Класс «{class_name.strip()}» заполнен ({TARGET}/{TARGET})")
+
+audio_input = st.audio_input("🎙️ Нажми для записи")
+
+if audio_input:
+    st.audio(audio_input, format="audio/wav")
+
+    if st.button("💾 Сохранить в датасет", key="save_btn", type="primary"):
+        if not class_name.strip():
+            st.error("Введи название класса!")
+        else:
+            current = get_stats().get(class_name.strip().lower().replace(" ", "_"), 0)
+            if current >= TARGET:
+                st.warning(f"⚠️ Класс «{class_name.strip()}» уже достиг {TARGET} записей!")
+            else:
+                cls, fname = save_audio(audio_input.read(), class_name)
+                new_count = get_stats().get(cls, 0)
+                st.success(f"✅ Сохранено! Класс «{cls}» — {new_count} / {TARGET}")
+                if new_count >= TARGET:
+                    st.balloons()
+                st.rerun()
+
 # ───── UPLOAD ─────
 st.divider()
 st.subheader("📂 Загрузка файла")
