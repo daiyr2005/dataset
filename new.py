@@ -89,7 +89,6 @@ with st.expander("📊 Статистика датасета", expanded=True):
 st.divider()
 
 # ───── RECORD ─────
-# ───── RECORD ─────
 st.subheader("🎙️ Запись нового примера")
 
 class_name = st.text_input(
@@ -132,6 +131,7 @@ if audio_bytes and len(audio_bytes) > 0:
                     st.balloons()
                     st.info(f"🎉 Класс «{cls}» достиг цели {TARGET} записей!")
                 st.rerun()
+
 # ───── UPLOAD ─────
 st.divider()
 st.subheader("📂 Загрузка файла")
