@@ -1,68 +1,27 @@
 import streamlit as st
 from audio_recorder_streamlit import audio_recorder
-import zipfile
-import io
 import os
 import uuid
-import shutil
+import zipfile
+import io
+import random
+import librosa
+import numpy as np
+import soundfile as sf
 
+# ───── SETTINGS ─────
 TARGET = 100
 
-# ───── DATASET DIR ─────
 if "dataset_dir" not in st.session_state:
     st.session_state["dataset_dir"] = "dataset"
 
 DATASET_DIR = st.session_state["dataset_dir"]
 os.makedirs(DATASET_DIR, exist_ok=True)
 
-st.title("🗂️ Сбор аудио датасета")
-
-# ───── ПЕРЕКЛЮЧЕНИЕ ДАТАСЕТА ─────
-all_datasets = [d for d in os.listdir(".") if os.path.isdir(d) and not d.startswith(".")]
-
-col1, col2 = st.columns([2, 1])
-with col1:
-    selected = st.selectbox(
-        "📁 Текущий датасет",
-        all_datasets,
-        index=all_datasets.index(DATASET_DIR) if DATASET_DIR in all_datasets else 0
-    )
-    if selected != DATASET_DIR:
-        st.session_state["dataset_dir"] = selected
-        st.rerun()
-
-with col2:
-    st.metric("Активный", DATASET_DIR)
-
-st.divider()
-
-# ───── СОЗДАТЬ ДАТАСЕТ ─────
-st.subheader("🆕 Создать новый датасет")
-
-new_name = st.text_input("Название нового датасета")
-
-if st.button("🆕 Создать"):
-    if new_name.strip():
-        new_dir = new_name.strip().lower().replace(" ", "_")
-        os.makedirs(new_dir, exist_ok=True)
-        st.session_state["dataset_dir"] = new_dir
-        st.success(f"Создан: {new_dir}")
-        st.rerun()
-    else:
-        st.error("Введи название")
-
-st.divider()
-
-# ───── FUNCTIONS ─────
-def get_stats():
-    stats = {}
-    for cls in os.listdir(DATASET_DIR):
-        path = os.path.join(DATASET_DIR, cls)
-        if os.path.isdir(path):
-            stats[cls] = len(os.listdir(path))
-    return stats
+st.title("🗂️ Audio Dataset + 500 Voice Augmentation")
 
 
+# ───── SAVE AUDIO ─────
 def save_audio(file_bytes, class_name):
     class_name = class_name.strip().lower().replace(" ", "_")
     class_dir = os.path.join(DATASET_DIR, class_name)
@@ -77,99 +36,113 @@ def save_audio(file_bytes, class_name):
     return class_name, filename
 
 
-# ───── STATS ─────
-with st.expander("📊 Статистика", expanded=True):
-    stats = get_stats()
-    if stats:
-        cols = st.columns(len(stats))
-        for col, (cls, cnt) in zip(cols, stats.items()):
-            pct = min(cnt / TARGET, 1.0)
-            col.metric(cls, f"{cnt}/{TARGET}")
-            col.progress(pct)
-    else:
-        st.info("Пусто")
+# ───── COUNT ─────
+def get_local_count(class_name):
+    class_dir = os.path.join(DATASET_DIR, class_name)
+    if not os.path.exists(class_dir):
+        return 0
+    return len([f for f in os.listdir(class_dir) if f.endswith(".wav")])
 
-st.divider()
 
-# ───── RECORD ─────
-st.subheader("🎙️ Запись")
+# ───── 500 VOICE AUGMENTATION ─────
+def generate_500_variants(audio_bytes):
+    y, sr = librosa.load(io.BytesIO(audio_bytes), sr=None)
 
-class_name = st.text_input("Класс", key="class_input")
+    outputs = []
 
-if class_name.strip():
-    current = get_stats().get(class_name.strip().lower().replace(" ", "_"), 0)
-    st.caption(f"{current}/{TARGET}")
+    for _ in range(500):
+        y_mod = y.copy()
+
+        # pitch shift
+        n_steps = random.uniform(-8, 8)
+        y_mod = librosa.effects.pitch_shift(y_mod, sr=sr, n_steps=n_steps)
+
+        # speed change
+        rate = random.uniform(0.85, 1.15)
+        y_mod = librosa.effects.time_stretch(y_mod, rate=rate)
+
+        # noise
+        noise = np.random.normal(0, 0.002, len(y_mod))
+        y_mod = y_mod + noise
+
+        buffer = io.BytesIO()
+        sf.write(buffer, y_mod, sr, format="WAV")
+        outputs.append(buffer.getvalue())
+
+    return outputs
+
+
+# ───── UI ─────
+st.subheader("🎙️ Record audio")
+
+class_name = st.text_input("Class name")
 
 audio_bytes = audio_recorder(
-    text="Нажми для записи",
+    text="Press to record",
     recording_color="#e74c3c",
-    neutral_color="#3498db",
+    neutral_color="#3498db"
 )
 
-# ✅ ВОТ ТУТ ДОБАВЛЕНО СКАЧИВАНИЕ
-if audio_bytes and len(audio_bytes) > 0:
+
+# ───── PREVIEW ─────
+if audio_bytes:
     st.audio(audio_bytes, format="audio/wav")
 
-    st.download_button(
-        label="⬇️ Скачать аудио",
-        data=audio_bytes,
-        file_name=f"{uuid.uuid4()}.wav",
-        mime="audio/wav"
-    )
+    st.subheader("🔥 Generate dataset")
 
-    if st.button("💾 Сохранить"):
+    if st.button("Generate 500 voices"):
         if not class_name.strip():
-            st.error("Введи класс")
+            st.error("Enter class name")
         else:
-            cls, fname = save_audio(audio_bytes, class_name)
-            st.success(f"Сохранено: {cls}/{fname}")
+            cls = class_name.strip().lower().replace(" ", "_")
+            class_dir = os.path.join(DATASET_DIR, cls)
+            os.makedirs(class_dir, exist_ok=True)
+
+            variants = generate_500_variants(audio_bytes)
+
+            for i, audio in enumerate(variants):
+                filename = f"{uuid.uuid4()}_{i}.wav"
+                path = os.path.join(class_dir, filename)
+
+                with open(path, "wb") as f:
+                    f.write(audio)
+
+            st.success("🔥 500 files created!")
+            st.balloons()
             st.rerun()
+
+    if st.button("💾 Save single file"):
+        if class_name.strip():
+            cls, fname = save_audio(audio_bytes, class_name)
+            count = get_local_count(cls)
+            st.success(f"Saved: {cls}/{fname} — {count}")
+            st.rerun()
+        else:
+            st.error("Enter class name")
+
 
 # ───── UPLOAD ─────
 st.divider()
-st.subheader("📂 Загрузка файла")
+st.subheader("📂 Upload WAV")
 
-uploaded = st.file_uploader("WAV", type=["wav"])
-upload_class = st.text_input("Класс файла")
+uploaded = st.file_uploader("Upload wav", type=["wav"])
+upload_class = st.text_input("Upload class")
 
-if uploaded and st.button("Сохранить файл"):
+if uploaded and st.button("Save upload"):
     if upload_class.strip():
-        data = uploaded.read()
-        cls, fname = save_audio(data, upload_class)
-        st.success(f"{cls}/{fname}")
+        save_audio(uploaded.read(), upload_class)
+        st.success("Uploaded")
         st.rerun()
     else:
-        st.error("Введи класс")
+        st.error("Enter class")
 
-# ───── ZIP IMPORT ─────
+
+# ───── ZIP EXPORT ─────
 st.divider()
-st.subheader("📥 Импорт ZIP")
-
-uploaded_zip = st.file_uploader("ZIP", type=["zip"])
-
-if uploaded_zip and st.button("Импорт"):
-    imported = 0
-    with zipfile.ZipFile(io.BytesIO(uploaded_zip.read())) as zf:
-        for name in zf.namelist():
-            parts = name.strip("/").split("/")
-            if len(parts) == 2:
-                cls, file = parts
-                if file.endswith(".wav"):
-                    cls_dir = os.path.join(DATASET_DIR, cls)
-                    os.makedirs(cls_dir, exist_ok=True)
-                    path = os.path.join(cls_dir, f"{uuid.uuid4()}.wav")
-                    with zf.open(name) as src, open(path, "wb") as dst:
-                        dst.write(src.read())
-                    imported += 1
-
-    st.success(f"Импортировано: {imported}")
-    st.rerun()
-
-# ───── ZIP DOWNLOAD ─────
-st.divider()
-st.subheader("📦 Скачать всё")
+st.subheader("📦 Download dataset")
 
 zip_buffer = io.BytesIO()
+
 with zipfile.ZipFile(zip_buffer, "w") as zf:
     for cls in os.listdir(DATASET_DIR):
         cls_path = os.path.join(DATASET_DIR, cls)
@@ -180,7 +153,7 @@ with zipfile.ZipFile(zip_buffer, "w") as zf:
 zip_buffer.seek(0)
 
 st.download_button(
-    "⬇️ Скачать dataset.zip",
+    "⬇️ Download ZIP",
     data=zip_buffer.getvalue(),
     file_name="dataset.zip"
 )
